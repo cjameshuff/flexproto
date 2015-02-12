@@ -7,6 +7,7 @@
 #include <array>
 
 #include "flexproto.h"
+#include "test_defs.h"
 
 using namespace std;
 using namespace flexproto;

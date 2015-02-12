@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 #include <type_traits>
 
 // A very simple framework for constructing protocols and files. The intent is a very lightweight
@@ -141,7 +142,7 @@ auto decode(const uint8_t *& data) -> T
 }
 
 
-inline auto encode_string(uint8_t *& data, std::string value) -> void
+inline auto encode_string(uint8_t *& data, const std::string & value) -> void
 {
     encode(data, value.length());
     memcpy(data, value.data(), value.length());
@@ -154,6 +155,31 @@ inline auto decode_string(const uint8_t *& data) -> std::string
     auto strdata = reinterpret_cast<const char *>(data);
     data += length;
     return std::string(strdata, length);
+}
+
+
+inline auto encode_other(uint8_t *& data, const std::string & value) -> void
+{
+    encode_string(data, value);
+}
+
+inline auto decode_other(const uint8_t *& data, std::string & value) -> void
+{
+    value = decode_string(data);
+}
+
+inline auto encode_other(uint8_t *& data, const std::vector<uint8_t> & value) -> void
+{
+    encode(data, value.size());
+    memcpy(data, value.data(), value.size());
+    data += value.size();
+}
+
+inline auto decode_other(const uint8_t *& data, std::vector<uint8_t> & value) -> void
+{
+    auto size = decode<uint64_t>(data);
+    value.insert(value.end(), data, data + size);
+    data += size;
 }
 
 } // namespace flexproto

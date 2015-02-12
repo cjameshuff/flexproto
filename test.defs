@@ -1,0 +1,12 @@
+
+$struct_defs = {
+    Point: {
+        x: :int32_t,
+        y: :int32_t
+    },
+    Thing: {
+        name: :string,
+        data: :blob,
+        location: :Point
+    }
+}
