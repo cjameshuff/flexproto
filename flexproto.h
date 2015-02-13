@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <type_traits>
+#include <stdexcept>
 
 // A very simple framework for constructing protocols and files. The intent is a very lightweight
 // encoding that is platform independent and achieves reasonable efficiency with little design
@@ -22,13 +23,7 @@
 // There are no explicit floating point values. They can be achieved in effect by sending separate
 // exponents and mantissas.
 // 
-// There are no tags or other data.
-// 
-// Range checks are not performed within the encoding/decoding functions. All decoding functions
-// will terminate if they encounter a zero byte, and the input buffer must end with such a byte.
-// This interacts well with COBS encoding for framing, which appends a zero byte to the decoded
-// message.
-// When encoding, the buffer length must be checked by the calling code.
+// There are no tags, field IDs, etc.
 
 namespace flexproto {
 
@@ -100,84 +95,108 @@ auto unzigzag(T value) -> typename std::make_signed<T>::type
 
 template<typename T,
          typename std::enable_if<std::is_unsigned<T>::value>::type * = nullptr>
-auto encode(uint8_t *& data, T value) -> void
+auto encode(uint8_t *& data, uint8_t * end_data, T value) -> void
 {
-    while(value)
+    while(value && data != end_data)
     {
         *data++ = ((value > 0x7F) << 7) | (value & 0x7F);
         value >>= 7;
     }
+    if(value && data == end_data)
+        throw std::length_error("flexproto::encode(): Insufficient room to encode flex-int.");
 }
 
 template<typename T,
          typename std::enable_if<std::is_signed<T>::value>::type * = nullptr>
-auto encode(uint8_t *& data, T value) -> void
+auto encode(uint8_t *& data, uint8_t * end_data, T value) -> void
 {
-    encode(data, zigzag(value));
+    encode(data, end_data, zigzag(value));
 }
 
 
 
 template<typename T,
          typename std::enable_if<std::is_unsigned<T>::value>::type * = nullptr>
-auto decode(const uint8_t *& data) -> T
+auto decode(const uint8_t *& data, const uint8_t * end_data) -> T
 {
     T value = *data & 0x7F;
     auto shift = 7;
-    while(*data & 0x80)
+    while(data != end_data && *data & 0x80)
     {
         value |= T(*(++data) & 0x7F) << shift;
         shift += 7;
     }
+    if(data == end_data)
+        throw std::length_error("flexproto::decode(): Input ended early.");
+    
     ++data;
     return value;
 }
 
 template<typename T,
          typename std::enable_if<std::is_signed<T>::value>::type * = nullptr>
-auto decode(const uint8_t *& data) -> T
+auto decode(const uint8_t *& data, const uint8_t * end_data) -> T
 {
     using unsignedT = typename std::make_unsigned<T>::type;
-    return unzigzag(decode<unsignedT>(data));
+    return unzigzag(decode<unsignedT>(data, end_data));
 }
 
 
-inline auto encode_string(uint8_t *& data, const std::string & value) -> void
+inline auto encode_string(uint8_t *& data, uint8_t * end_data, const std::string & value) -> void
 {
-    encode(data, value.length());
+    encode(data, end_data, value.length());
+    
+    if(data + value.length() > end_data)
+        throw std::length_error("flexproto::encode_string(): Insufficient room to encode string.");
+    
     memcpy(data, value.data(), value.length());
     data += value.length();
 }
 
-inline auto decode_string(const uint8_t *& data) -> std::string
+inline auto decode_string(const uint8_t *& data, const uint8_t * end_data) -> std::string
 {
-    auto length = decode<uint64_t>(data);
+    auto length = decode<uint64_t>(data, end_data);
+    
+    if(data + length > end_data)
+        throw std::length_error("flexproto::decode_string(): Input ended early.");
+    
     auto strdata = reinterpret_cast<const char *>(data);
     data += length;
     return std::string(strdata, length);
 }
 
 
-inline auto encode_other(uint8_t *& data, const std::string & value) -> void
+inline auto encode_other(uint8_t *& data, uint8_t * end_data, const std::string & value) -> void
 {
-    encode_string(data, value);
+    encode_string(data, end_data, value);
 }
 
-inline auto decode_other(const uint8_t *& data, std::string & value) -> void
+inline auto decode_other(const uint8_t *& data, const uint8_t * end_data,
+                         std::string & value) -> void
 {
-    value = decode_string(data);
+    value = decode_string(data, end_data);
 }
 
-inline auto encode_other(uint8_t *& data, const std::vector<uint8_t> & value) -> void
+inline auto encode_other(uint8_t *& data, uint8_t * end_data,
+                         const std::vector<uint8_t> & value) -> void
 {
-    encode(data, value.size());
+    encode(data, end_data, value.size());
+    
+    if(data + value.size() > end_data)
+        throw std::length_error("flexproto::encode_other<std::vector>(): Insufficient room to encode byte vector.");
+    
     memcpy(data, value.data(), value.size());
     data += value.size();
 }
 
-inline auto decode_other(const uint8_t *& data, std::vector<uint8_t> & value) -> void
+inline auto decode_other(const uint8_t *& data, const uint8_t * end_data,
+                         std::vector<uint8_t> & value) -> void
 {
-    auto size = decode<uint64_t>(data);
+    auto size = decode<uint64_t>(data, end_data);
+    
+    if(data + size > end_data)
+        throw std::length_error("flexproto::decode_other<std::vector>(): Input ended early.");
+    
     value.insert(value.end(), data, data + size);
     data += size;
 }

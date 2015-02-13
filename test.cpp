@@ -59,9 +59,10 @@ auto TestFullRoundTrip() -> void
         // print_signedness(val);
         
         auto crsr = buffer.data();
+        auto crsrEnd = buffer.data() + buffer.size();
         auto readCrsr = (const uint8_t *)buffer.data();
-        encode(crsr, val);
-        auto roundtrip = decode<T>(readCrsr);
+        encode(crsr, crsrEnd, val);
+        auto roundtrip = decode<T>(readCrsr, crsrEnd);
         if(roundtrip != val)
         {
             cout << "Expected to decode " << val << ", got " << roundtrip << endl;
@@ -86,8 +87,10 @@ auto TestStringRoundTrip() -> void
     auto val = std::string{"Hello World!"};
     auto crsr = buffer.data();
     auto readCrsr = (const uint8_t *)buffer.data();
-    encode_string(crsr, val);
-    auto roundtrip = decode_string(readCrsr);
+    auto writeCrsrEnd = buffer.data() + buffer.size();
+    auto readCrsrEnd = (const uint8_t *)buffer.data() + buffer.size();
+    encode_string(crsr, writeCrsrEnd, val);
+    auto roundtrip = decode_string(readCrsr, readCrsrEnd);
     if(roundtrip != val)
     {
         cout << "Expected to decode " << val << ", got " << roundtrip << endl;

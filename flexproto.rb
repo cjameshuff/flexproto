@@ -3,13 +3,28 @@
 # Base types:
 # :int8_t, :int16_t, :int32_t, :int64_t
 # :uint8_t, :uint16_t, :uint32_t, :uint64_t
-# :string: Flex coded unsigned int followed by N bytes of data.
+# :string: Flex coded unsigned int followed by N raw bytes of data.
 # :blob: Synonymous with :string, but decoded to std::vector<uint8_t>.
+# :array_TYPE: similar to blob, but encodes flex any type.
+# :fixarray_N_TYPE: similar to array_TYPE, but uses a fixed size array and a field type of
+# std::array.
+# 
+# TODO:
+# arrays
 
 BASIC_TYPES = [
     :int8_t, :int16_t, :int32_t, :int64_t,
     :uint8_t, :uint16_t, :uint32_t, :uint64_t
 ]
+
+def array_type(typename)
+    matches = /\Aarray_(\w+)/.match(typename)
+    matches[1]
+end
+def fixarray_parts(typename)
+    matches = /\Afixarray_(\d+)_(\w+)/.match(typename)
+    [matches[1], matches[2]]
+end
 
 def emit_struct(fout, struct_name, struct_def)
     fout.puts "struct #{struct_name.to_s} {"
@@ -18,6 +33,9 @@ def emit_struct(fout, struct_name, struct_def)
             fout.puts "    std::string #{field_name.to_s};"
         elsif(field_type == :blob)
             fout.puts "    std::vector<uint8_t> #{field_name.to_s};"
+        elsif(field_type.to_s.start_with?('array_'))
+            fout.puts "    std::vector<#{field_type.to_s}> #{field_name.to_s};"
+        elsif(field_type.to_s.start_with?('fixarray_'))
         else
             fout.puts "    #{field_type.to_s} #{field_name.to_s};"
         end
@@ -26,26 +44,28 @@ def emit_struct(fout, struct_name, struct_def)
 end
 
 def emit_encoder(fout, struct_name, struct_def)
-    fout.puts "inline auto encode_other(uint8_t *& data, const #{struct_name.to_s} & value) -> void"
+    fout.puts "inline auto encode_other(uint8_t *& data, uint8_t * end_data, const #{struct_name.to_s} & value) -> void"
     fout.puts "{"
     struct_def.each{|field_name, field_type|
         if(BASIC_TYPES.include?(field_type))
-            fout.puts "    encode(data, value.#{field_name.to_s});"
+            fout.puts "    encode(data, end_data, value.#{field_name});"
+        elsif(field_type.to_s.start_with?('array_'))
+        elsif(field_type.to_s.start_with?('fixarray_'))
         else
-            fout.puts "    encode_other(data, value.#{field_name.to_s});"
+            fout.puts "    encode_other(data, end_data, value.#{field_name});"
         end
     }
     fout.puts "}"
 end
 
 def emit_decoder(fout, struct_name, struct_def)
-    fout.puts "inline auto decode_other(const uint8_t *& data, #{struct_name.to_s} & value) -> void"
+    fout.puts "inline auto decode_other(const uint8_t *& data, const uint8_t * end_data, #{struct_name.to_s} & value) -> void"
     fout.puts "{"
     struct_def.each{|field_name, field_type|
         if(BASIC_TYPES.include?(field_type))
-            fout.puts "    value.#{field_name.to_s} = decode<#{field_type.to_s}>(data);"
+            fout.puts "    value.#{field_name} = decode<#{field_type}>(data, end_data);"
         else
-            fout.puts "    decode_other(data, value.#{field_name.to_s});"
+            fout.puts "    decode_other(data, end_data, value.#{field_name});"
         end
     }
     fout.puts "}"
