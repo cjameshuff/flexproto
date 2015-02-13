@@ -34,8 +34,11 @@ def emit_struct(fout, struct_name, struct_def)
         elsif(field_type == :blob)
             fout.puts "    std::vector<uint8_t> #{field_name.to_s};"
         elsif(field_type.to_s.start_with?('array_'))
-            fout.puts "    std::vector<#{field_type.to_s}> #{field_name.to_s};"
+            type = array_type(field_type.to_s)
+            fout.puts "    std::vector<#{type}> #{field_name.to_s};"
         elsif(field_type.to_s.start_with?('fixarray_'))
+            size, type = fixarray_parts(field_type.to_s)
+            fout.puts "    std::array<#{type}, #{size}> #{field_name.to_s};"
         else
             fout.puts "    #{field_type.to_s} #{field_name.to_s};"
         end
@@ -50,7 +53,11 @@ def emit_encoder(fout, struct_name, struct_def)
         if(BASIC_TYPES.include?(field_type))
             fout.puts "    encode(data, end_data, value.#{field_name});"
         elsif(field_type.to_s.start_with?('array_'))
+            type = array_type(field_type.to_s)
+            fout.puts "    encode_variable_array(data, end_data, value.#{field_name});"
         elsif(field_type.to_s.start_with?('fixarray_'))
+            size, type = fixarray_parts(field_type.to_s)
+            fout.puts "    encode_fixed_array(data, end_data, value.#{field_name});"
         else
             fout.puts "    encode_other(data, end_data, value.#{field_name});"
         end
@@ -64,6 +71,12 @@ def emit_decoder(fout, struct_name, struct_def)
     struct_def.each{|field_name, field_type|
         if(BASIC_TYPES.include?(field_type))
             fout.puts "    value.#{field_name} = decode<#{field_type}>(data, end_data);"
+        elsif(field_type.to_s.start_with?('array_'))
+            type = array_type(field_type.to_s)
+            fout.puts "    decode_variable_array(data, end_data, value.#{field_name});"
+        elsif(field_type.to_s.start_with?('fixarray_'))
+            size, type = fixarray_parts(field_type.to_s)
+            fout.puts "    decode_fixed_array(data, end_data, value.#{field_name});"
         else
             fout.puts "    decode_other(data, end_data, value.#{field_name});"
         end

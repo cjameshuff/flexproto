@@ -19,9 +19,8 @@
 // of their sign.
 // 
 // Strings/blobs are an unsigned integer followed by raw bytes.
-// 
-// There are no explicit floating point values. They can be achieved in effect by sending separate
-// exponents and mantissas.
+// Variable size arrays are an unsigned integer followed by repetitions of the contained type.
+// Fixed size arrays are simply repetitions of the contained type.
 // 
 // There are no tags, field IDs, etc.
 
@@ -166,6 +165,7 @@ inline auto decode_string(const uint8_t *& data, const uint8_t * end_data) -> st
 }
 
 
+// Encode/decode string
 inline auto encode_other(uint8_t *& data, uint8_t * end_data, const std::string & value) -> void
 {
     encode_string(data, end_data, value);
@@ -177,6 +177,7 @@ inline auto decode_other(const uint8_t *& data, const uint8_t * end_data,
     value = decode_string(data, end_data);
 }
 
+// Encode/decode binary blob
 inline auto encode_other(uint8_t *& data, uint8_t * end_data,
                          const std::vector<uint8_t> & value) -> void
 {
@@ -199,6 +200,39 @@ inline auto decode_other(const uint8_t *& data, const uint8_t * end_data,
     
     value.insert(value.end(), data, data + size);
     data += size;
+}
+
+
+// Encode/decode arrays of structs
+template<typename T>
+auto encode_variable_array(uint8_t *& data, uint8_t * end_data, const T & values) -> void
+{
+    encode(data, end_data, values.size());
+    for(auto & entry: values)
+        encode_other(data, end_data, entry);
+}
+
+template<typename T>
+auto decode_variable_array(const uint8_t *& data, const uint8_t * end_data, T & values) -> void
+{
+    auto size = decode<size_t>(data, end_data);
+    values.resize(size);
+    for(auto & entry: values)
+        decode_other(data, end_data, entry);
+}
+
+template<typename T>
+auto encode_fixed_array(uint8_t *& data, uint8_t * end_data, const T & values) -> void
+{
+    for(auto & entry: values)
+        encode_other(data, end_data, entry);
+}
+
+template<typename T>
+auto decode_fixed_array(const uint8_t *& data, const uint8_t * end_data, T & values) -> void
+{
+    for(auto & entry: values)
+        decode_other(data, end_data, entry);
 }
 
 } // namespace flexproto
