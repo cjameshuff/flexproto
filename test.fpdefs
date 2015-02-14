@@ -1,0 +1,15 @@
+
+
+$struct_defs[:Point] = {
+    x: :int32_t,
+    y: :int32_t
+}
+
+$struct_defs[:Thing] = {
+    name: :string,
+    data: :blob,
+    varArray: :array_Point,
+    fixedArray: :fixarray_8_Point,
+    location: :Point
+}
+

@@ -23,6 +23,8 @@
 // Fixed size arrays are simply repetitions of the contained type.
 // 
 // There are no tags, field IDs, etc.
+// 
+// Possible extension: optional fields, with a bit vector indicating present data.
 
 namespace flexproto {
 
