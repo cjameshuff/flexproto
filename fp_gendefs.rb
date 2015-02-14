@@ -1,17 +1,5 @@
 #!/usr/bin/env ruby
 
-# Base types:
-# :int8_t, :int16_t, :int32_t, :int64_t
-# :uint8_t, :uint16_t, :uint32_t, :uint64_t
-# :string: Flex coded unsigned int followed by N raw bytes of data.
-# :blob: Synonymous with :string, but decoded to std::vector<uint8_t>.
-# :array_TYPE: similar to blob, but encodes flex any type.
-# :fixarray_N_TYPE: similar to array_TYPE, but uses a fixed size array and a field type of
-# std::array.
-# 
-# TODO:
-# arrays
-
 BASIC_TYPES = [
     :int8_t, :int16_t, :int32_t, :int64_t,
     :uint8_t, :uint16_t, :uint32_t, :uint64_t
@@ -46,7 +34,7 @@ def emit_struct(fout, struct_name, struct_def)
     fout.puts "};"
 end
 
-def emit_encoder(fout, struct_name, struct_def)
+def emit_struct_encoder(fout, struct_name, struct_def)
     fout.puts "inline auto encode_other(uint8_t *& data, uint8_t * end_data, const #{struct_name.to_s} & value) -> void"
     fout.puts "{"
     struct_def.each{|field_name, field_type|
@@ -65,7 +53,7 @@ def emit_encoder(fout, struct_name, struct_def)
     fout.puts "}"
 end
 
-def emit_decoder(fout, struct_name, struct_def)
+def emit_struct_decoder(fout, struct_name, struct_def)
     fout.puts "inline auto decode_other(const uint8_t *& data, const uint8_t * end_data, #{struct_name.to_s} & value) -> void"
     fout.puts "{"
     struct_def.each{|field_name, field_type|
@@ -90,9 +78,38 @@ def emit_structs(fout, struct_defs)
             emit_struct(fout, n, d)
         end
         fout.puts
-        emit_encoder(fout, n, d)
+        emit_struct_encoder(fout, n, d)
         fout.puts
-        emit_decoder(fout, n, d)
+        emit_struct_decoder(fout, n, d)
+        fout.puts
+        fout.puts
+    }
+end
+
+def emit_enums(fout, enum_defs)
+    enum_defs.each{|n, d|
+        fout.puts
+        fout.puts "enum #{n} {"
+        fout.puts d.map{|const_name, const_val|
+            if(const_val.nil?)
+                "    #{const_name}"
+            else
+                "    #{const_name} = #{const_val}"
+            end
+        }.join(",\n")
+        fout.puts "}"
+        fout.puts
+        fout.puts
+    }
+end
+
+def emit_type_enums(fout, enum_defs)
+    enum_defs.each{|n, d|
+        fout.puts
+        fout.puts "template<typename T> struct #{n}_traits {};"
+        d.each_with_index{|type_name, index|
+            fout.puts "template<> struct #{n}_traits<#{type_name}> {constexpr uint32_t id = #{index};};"
+        }
         fout.puts
         fout.puts
     }
@@ -125,12 +142,14 @@ cpp_header_name = "#{filename.gsub('.', '_')}.h"
 
 $struct_defs = {}
 $external_structs = []
-# $enum_defs = {}
-# $type_enum_defs = {}
+$enum_defs = {}
+$type_enum_defs = {}
 
 load(filename)
 
 fout = File.new(cpp_header_name, 'w')
 emit_cinc_header(fout, cpp_header_name)
+emit_enums(fout, $enum_defs)
+emit_type_enums(fout, $type_enum_defs)
 emit_structs(fout, $struct_defs)
 emit_cinc_footer(fout, cpp_header_name)

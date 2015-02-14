@@ -1,5 +1,33 @@
 
+# Enumerated constants are specified much as they are in C, a list of identifiers with optional
+# values. They can be a hash mapping names to values or nil, or an array of names.
 
+$enum_defs[:setting_id_t] = {
+    FIRST_SETTING: 0,
+    SETTING_A: nil,
+    SETTING_B: nil
+}
+
+$enum_defs[:dir_t] = %w[DIR_LEFT DIR_RIGHT DIR_UP DIR_DOWN DIR_FRONT DIR_BACK]
+
+
+# Type enumerations provide a mapping of types to and from integer IDs. Trait structures are
+# generated providing a way to associate types with the appropriate integer values. At present,
+# these are mainly to assist production of hand-written encoders and decoders.
+# Only the array-of-words form is supported for type enums.
+$type_enum_defs[:type_id_t] = %w[Triangle Circle Hypercube]
+
+
+# Structs are straightforward: maps of field identifiers to type identifiers.
+# 
+# Base types:
+# :int8_t, :int16_t, :int32_t, :int64_t
+# :uint8_t, :uint16_t, :uint32_t, :uint64_t
+# :string: Flex coded unsigned int followed by N raw bytes of data.
+# :blob: Identical wire format to :string, but decoded to std::vector<uint8_t>.
+# :array_TYPE: similar to blob, but handles any type.
+# :fixarray_N_TYPE: similar to array_TYPE, but uses a fixed size array and a field type of
+# std::array.
 $struct_defs[:Point] = {
     x: :int32_t,
     y: :int32_t
