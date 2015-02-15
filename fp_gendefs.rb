@@ -35,41 +35,53 @@ def emit_struct(fout, struct_name, struct_def)
 end
 
 def emit_struct_encoder(fout, struct_name, struct_def)
-    fout.puts "inline auto encode_other(uint8_t *& data, uint8_t * end_data, const #{struct_name.to_s} & value) -> void"
+    fout.puts "template<typename outT>"
+    fout.puts "auto encode_other(outT & data, const #{struct_name.to_s} & value) -> void"
     fout.puts "{"
     struct_def.each{|field_name, field_type|
         if(BASIC_TYPES.include?(field_type))
-            fout.puts "    encode(data, end_data, value.#{field_name});"
+            fout.puts "    encode(data, value.#{field_name});"
         elsif(field_type.to_s.start_with?('array_'))
             type = array_type(field_type.to_s)
-            fout.puts "    encode_variable_array(data, end_data, value.#{field_name});"
+            fout.puts "    encode_variable_array(data, value.#{field_name});"
         elsif(field_type.to_s.start_with?('fixarray_'))
             size, type = fixarray_parts(field_type.to_s)
-            fout.puts "    encode_fixed_array(data, end_data, value.#{field_name});"
+            fout.puts "    encode_fixed_array(data, value.#{field_name});"
         else
-            fout.puts "    encode_other(data, end_data, value.#{field_name});"
+            fout.puts "    encode_other(data, value.#{field_name});"
         end
     }
     fout.puts "}"
 end
 
 def emit_struct_decoder(fout, struct_name, struct_def)
-    fout.puts "inline auto decode_other(const uint8_t *& data, const uint8_t * end_data, #{struct_name.to_s} & value) -> void"
+    fout.puts "template<typename inT>"
+    fout.puts "auto decode_other(inT & data, #{struct_name.to_s} & value) -> void"
     fout.puts "{"
     struct_def.each{|field_name, field_type|
         if(BASIC_TYPES.include?(field_type))
-            fout.puts "    value.#{field_name} = decode<#{field_type}>(data, end_data);"
+            fout.puts "    value.#{field_name} = decode<inT, #{field_type}>(data);"
         elsif(field_type.to_s.start_with?('array_'))
             type = array_type(field_type.to_s)
-            fout.puts "    decode_variable_array(data, end_data, value.#{field_name});"
+            fout.puts "    decode_variable_array(data, value.#{field_name});"
         elsif(field_type.to_s.start_with?('fixarray_'))
             size, type = fixarray_parts(field_type.to_s)
-            fout.puts "    decode_fixed_array(data, end_data, value.#{field_name});"
+            fout.puts "    decode_fixed_array(data, value.#{field_name});"
         else
-            fout.puts "    decode_other(data, end_data, value.#{field_name});"
+            fout.puts "    decode_other(data, value.#{field_name});"
         end
     }
     fout.puts "}"
+end
+
+def emit_forward_defs(fout, struct_defs)
+    struct_defs.each{|n, d|
+        if(!$external_structs.include?(n))
+            fout.puts "struct #{n};"
+        end
+    }
+    fout.puts
+    fout.puts
 end
 
 def emit_structs(fout, struct_defs)
@@ -88,7 +100,6 @@ end
 
 def emit_enums(fout, enum_defs)
     enum_defs.each{|n, d|
-        fout.puts
         fout.puts "enum #{n} {"
         fout.puts d.map{|const_name, const_val|
             if(const_val.nil?)
@@ -97,7 +108,7 @@ def emit_enums(fout, enum_defs)
                 "    #{const_name} = #{const_val}"
             end
         }.join(",\n")
-        fout.puts "}"
+        fout.puts "};"
         fout.puts
         fout.puts
     }
@@ -105,10 +116,9 @@ end
 
 def emit_type_enums(fout, enum_defs)
     enum_defs.each{|n, d|
-        fout.puts
         fout.puts "template<typename T> struct #{n}_traits {};"
         d.each_with_index{|type_name, index|
-            fout.puts "template<> struct #{n}_traits<#{type_name}> {constexpr uint32_t id = #{index};};"
+            fout.puts "template<> struct #{n}_traits<#{type_name}> {static constexpr uint32_t id = #{index};};"
         }
         fout.puts
         fout.puts
@@ -151,6 +161,8 @@ load(filename)
 fout = File.new(cpp_header_name, 'w')
 emit_cinc_header(fout, cpp_header_name)
 $external_includes.each {|incfile| fout.puts "#include \"#{incfile}\""}
+fout.puts
+emit_forward_defs(fout, $struct_defs)
 emit_enums(fout, $enum_defs)
 emit_type_enums(fout, $type_enum_defs)
 emit_structs(fout, $struct_defs)

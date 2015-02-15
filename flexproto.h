@@ -94,147 +94,177 @@ auto unzigzag(T value) -> typename std::make_signed<T>::type
 }
 
 
-template<typename T,
-         typename std::enable_if<std::is_unsigned<T>::value>::type * = nullptr>
-auto encode(uint8_t *& data, uint8_t * end_data, T value) -> void
-{
-    while(value && data != end_data)
-    {
-        *data++ = ((value > 0x7F) << 7) | (value & 0x7F);
-        value >>= 7;
+struct DataO {
+    uint8_t * data;
+    uint8_t * end_data;
+    uint8_t * crsr;
+    DataO(uint8_t * b, size_t s): data{b}, end_data{b + s}, crsr{b} {}
+    
+    auto space() const -> size_t {return end_data - data;}
+    
+    auto put(uint8_t x) -> void {
+        if(data == end_data)
+            throw std::length_error("DataO::put(): Reached end of output buffer.");
+        *data++ = x;
     }
-    if(value && data == end_data)
-        throw std::length_error("flexproto::encode(): Insufficient room to encode flex-int.");
-}
+    
+    auto put(const uint8_t * d, size_t s) -> void {
+        if(space() < s)
+            throw std::length_error("DataO::put(): Reached end of output buffer.");
+        memcpy(data, d, s);
+        data += s;
+    }
+};
 
-template<typename T,
-         typename std::enable_if<std::is_signed<T>::value>::type * = nullptr>
-auto encode(uint8_t *& data, uint8_t * end_data, T value) -> void
-{
-    encode(data, end_data, zigzag(value));
-}
+struct DataI {
+    const uint8_t * data;
+    const uint8_t * end_data;
+    const uint8_t * crsr;
+    DataI(const uint8_t * b, size_t s): data{b}, end_data{b + s}, crsr{b} {}
+    
+    auto space() const -> size_t {return end_data - data;}
+    
+    auto get() -> uint8_t {
+        if(data == end_data)
+            throw std::length_error("DataI::get(): Reached end of input buffer.");
+        return *data++;
+    }
+    
+    auto get(uint8_t * d, size_t s) -> void {
+        if(space() < s)
+            throw std::length_error("DataI::put(): Reached end of input buffer.");
+        memcpy(d, data, s);
+        data += s;
+    }
+    
+    auto get(size_t s) -> const uint8_t * {
+        if(space() < s)
+            throw std::length_error("DataI::put(): Reached end of input buffer.");
+        auto tmp = data;
+        data += s;
+        return tmp;
+    }
+};
 
 
-
-template<typename T,
+template<typename outT, typename T,
          typename std::enable_if<std::is_unsigned<T>::value>::type * = nullptr>
-auto decode(const uint8_t *& data, const uint8_t * end_data) -> T
+auto encode(outT & data, T value) -> void
 {
-    T value = *data & 0x7F;
+    for(; value; value >>= 7)
+        data.put(((value > 0x7F) << 7) | (value & 0x7F));
+}
+
+template<typename outT, typename T,
+         typename std::enable_if<std::is_signed<T>::value>::type * = nullptr>
+auto encode(outT & data, T value) -> void
+{
+    encode(data, zigzag(value));
+}
+
+
+
+template<typename inT, typename T,
+         typename std::enable_if<std::is_unsigned<T>::value>::type * = nullptr>
+auto decode(inT & data) -> T
+{
+    auto byte = data.get();
+    auto value = T(byte & 0x7F);
     auto shift = 7;
-    while(data != end_data && *data & 0x80)
+    while(byte & 0x80)
     {
-        value |= T(*(++data) & 0x7F) << shift;
+        byte = data.get();
+        value |= T(byte & 0x7F) << shift;
         shift += 7;
     }
-    if(data == end_data)
-        throw std::length_error("flexproto::decode(): Input ended early.");
-    
-    ++data;
     return value;
 }
 
-template<typename T,
+template<typename inT, typename T,
          typename std::enable_if<std::is_signed<T>::value>::type * = nullptr>
-auto decode(const uint8_t *& data, const uint8_t * end_data) -> T
+auto decode(inT & data) -> T
 {
     using unsignedT = typename std::make_unsigned<T>::type;
-    return unzigzag(decode<unsignedT>(data, end_data));
+    return unzigzag(decode<inT, unsignedT>(data));
 }
 
 
-inline auto encode_string(uint8_t *& data, uint8_t * end_data, const std::string & value) -> void
+template<typename outT>
+auto encode_string(outT & data, const std::string & value) -> void
 {
-    encode(data, end_data, value.length());
-    
-    if(data + value.length() > end_data)
-        throw std::length_error("flexproto::encode_string(): Insufficient room to encode string.");
-    
-    memcpy(data, value.data(), value.length());
-    data += value.length();
+    encode(data, value.length());
+    data.put(reinterpret_cast<const uint8_t *>(value.data()), value.length());
 }
 
-inline auto decode_string(const uint8_t *& data, const uint8_t * end_data) -> std::string
+template<typename inT>
+auto decode_string(inT & data) -> std::string
 {
-    auto length = decode<uint64_t>(data, end_data);
-    
-    if(data + length > end_data)
-        throw std::length_error("flexproto::decode_string(): Input ended early.");
-    
-    auto strdata = reinterpret_cast<const char *>(data);
-    data += length;
+    auto length = decode<inT, uint64_t>(data);
+    auto strdata = reinterpret_cast<const char *>(data.get(length));
     return std::string(strdata, length);
 }
 
 
 // Encode/decode string
-inline auto encode_other(uint8_t *& data, uint8_t * end_data, const std::string & value) -> void
+template<typename outT>
+auto encode_other(outT & data, const std::string & value) -> void
 {
-    encode_string(data, end_data, value);
+    encode_string(data, value);
 }
 
-inline auto decode_other(const uint8_t *& data, const uint8_t * end_data,
-                         std::string & value) -> void
+template<typename inT>
+auto decode_other(inT & data, const std::string & value) -> void
 {
-    value = decode_string(data, end_data);
+    value = decode_string(data);
 }
 
 // Encode/decode binary blob
-inline auto encode_other(uint8_t *& data, uint8_t * end_data,
-                         const std::vector<uint8_t> & value) -> void
+template<typename outT>
+auto encode_other(outT & data, const std::vector<uint8_t> & value) -> void
 {
-    encode(data, end_data, value.size());
-    
-    if(data + value.size() > end_data)
-        throw std::length_error("flexproto::encode_other<std::vector>(): Insufficient room to encode byte vector.");
-    
-    memcpy(data, value.data(), value.size());
-    data += value.size();
+    encode(data, value.size());
+    data.put(value.data(), value.size());
 }
 
-inline auto decode_other(const uint8_t *& data, const uint8_t * end_data,
-                         std::vector<uint8_t> & value) -> void
+template<typename inT>
+auto decode_other(inT & data, std::vector<uint8_t> & value) -> void
 {
-    auto size = decode<uint64_t>(data, end_data);
-    
-    if(data + size > end_data)
-        throw std::length_error("flexproto::decode_other<std::vector>(): Input ended early.");
-    
-    value.insert(value.end(), data, data + size);
-    data += size;
+    auto size = decode<inT, uint64_t>(data);
+    value.resize(size);
+    data.get(value.data(), size);
 }
 
 
 // Encode/decode arrays of structs
-template<typename T>
-auto encode_variable_array(uint8_t *& data, uint8_t * end_data, const T & values) -> void
+template<typename outT, typename T>
+auto encode_variable_array(outT & data, const T & values) -> void
 {
-    encode(data, end_data, values.size());
+    encode(data, values.size());
     for(auto & entry: values)
-        encode_other(data, end_data, entry);
+        encode_other(data, entry);
 }
 
-template<typename T>
-auto decode_variable_array(const uint8_t *& data, const uint8_t * end_data, T & values) -> void
+template<typename inT, typename T>
+auto decode_variable_array(inT & data, T & values) -> void
 {
-    auto size = decode<size_t>(data, end_data);
+    auto size = decode<inT, size_t>(data);
     values.resize(size);
     for(auto & entry: values)
-        decode_other(data, end_data, entry);
+        decode_other(data, entry);
 }
 
-template<typename T>
-auto encode_fixed_array(uint8_t *& data, uint8_t * end_data, const T & values) -> void
+template<typename outT, typename T>
+auto encode_fixed_array(outT & data, const T & values) -> void
 {
     for(auto & entry: values)
-        encode_other(data, end_data, entry);
+        encode_other(data, entry);
 }
 
-template<typename T>
-auto decode_fixed_array(const uint8_t *& data, const uint8_t * end_data, T & values) -> void
+template<typename inT, typename T>
+auto decode_fixed_array(inT & data, T & values) -> void
 {
     for(auto & entry: values)
-        decode_other(data, end_data, entry);
+        decode_other(data, entry);
 }
 
 } // namespace flexproto

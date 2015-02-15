@@ -7,7 +7,7 @@
 #include <array>
 
 #include "flexproto.h"
-#include "test_defs.h"
+#include "test_fpdefs.h"
 
 using namespace std;
 using namespace flexproto;
@@ -58,11 +58,10 @@ auto TestFullRoundTrip() -> void
         // print_signedness<T>();
         // print_signedness(val);
         
-        auto crsr = buffer.data();
-        auto crsrEnd = buffer.data() + buffer.size();
-        auto readCrsr = (const uint8_t *)buffer.data();
-        encode(crsr, crsrEnd, val);
-        auto roundtrip = decode<T>(readCrsr, crsrEnd);
+        auto output = DataO(buffer.data(), buffer.size());
+        auto input = DataI(buffer.data(), buffer.size());
+        encode(output, val);
+        auto roundtrip = decode<DataI, T>(input);
         if(roundtrip != val)
         {
             cout << "Expected to decode " << val << ", got " << roundtrip << endl;
@@ -85,12 +84,10 @@ auto TestStringRoundTrip() -> void
     buffer.fill(0);
     
     auto val = std::string{"Hello World!"};
-    auto crsr = buffer.data();
-    auto readCrsr = (const uint8_t *)buffer.data();
-    auto writeCrsrEnd = buffer.data() + buffer.size();
-    auto readCrsrEnd = (const uint8_t *)buffer.data() + buffer.size();
-    encode_string(crsr, writeCrsrEnd, val);
-    auto roundtrip = decode_string(readCrsr, readCrsrEnd);
+    auto output = DataO(buffer.data(), buffer.size());
+    auto input = DataI(buffer.data(), buffer.size());
+    encode_string(output, val);
+    auto roundtrip = decode_string(input);
     if(roundtrip != val)
     {
         cout << "Expected to decode " << val << ", got " << roundtrip << endl;

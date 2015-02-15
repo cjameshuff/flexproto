@@ -1,4 +1,6 @@
 
+$external_includes.push('points.h')
+
 # Enumerated constants are specified much as they are in C, a list of identifiers with optional
 # values. They can be a hash mapping names to values or nil, or an array of names.
 
@@ -15,6 +17,7 @@ $enum_defs[:dir_t] = %w[DIR_LEFT DIR_RIGHT DIR_UP DIR_DOWN DIR_FRONT DIR_BACK]
 # generated providing a way to associate types with the appropriate integer values. At present,
 # these are mainly to assist production of hand-written encoders and decoders.
 # Only the array-of-words form is supported for type enums.
+
 $type_enum_defs[:type_id_t] = %w[Triangle Circle Hypercube]
 
 
@@ -28,10 +31,30 @@ $type_enum_defs[:type_id_t] = %w[Triangle Circle Hypercube]
 # :array_TYPE: similar to blob, but handles any type.
 # :fixarray_N_TYPE: similar to array_TYPE, but uses a fixed size array and a field type of
 # std::array.
+
 $struct_defs[:Point] = {
     x: :int32_t,
     y: :int32_t
 }
+
+
+# Structs named in $external_structs do not have their definitions generated, only their encoders
+# and decoders.
+
+$external_structs.push(:Point)
+
+
+
+$struct_defs[:Triangle] = {
+    vertices: :fixarray_3_Point
+}
+$struct_defs[:Circle] = {
+    center: :Point
+}
+$struct_defs[:Hypercube] = {
+    sizes: :fixarray_4_uint32_t
+}
+
 
 $struct_defs[:Thing] = {
     name: :string,
@@ -40,4 +63,17 @@ $struct_defs[:Thing] = {
     fixedArray: :fixarray_8_Point,
     location: :Point
 }
+
+
+
+# $struct_defs[:Triangle] = {
+#     vertex_inds: :fixarray_3_ivec3,
+#     normal_inds: :fixarray_3_ivec3
+# }
+
+# $struct_defs[:TriMesh] = {
+#     vertex_data: :array_int32_t,
+#     normal_data: :array_int32_t,
+#     triangles: :array_Triangle
+# }
 
