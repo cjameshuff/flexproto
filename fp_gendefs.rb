@@ -140,6 +140,7 @@ end
 filename = ARGV[0]
 cpp_header_name = "#{filename.gsub('.', '_')}.h"
 
+$external_includes = []
 $struct_defs = {}
 $external_structs = []
 $enum_defs = {}
@@ -149,6 +150,7 @@ load(filename)
 
 fout = File.new(cpp_header_name, 'w')
 emit_cinc_header(fout, cpp_header_name)
+$external_includes.each {|incfile| fout.puts "#include \"#{incfile}\""}
 emit_enums(fout, $enum_defs)
 emit_type_enums(fout, $type_enum_defs)
 emit_structs(fout, $struct_defs)
