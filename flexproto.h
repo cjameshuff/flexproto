@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <array>
 #include <type_traits>
 #include <stdexcept>
 
@@ -93,55 +94,57 @@ auto unzigzag(T value) -> typename std::make_signed<T>::type
         return signedT(value >> 1);
 }
 
-
-struct DataO {
-    uint8_t * data;
-    uint8_t * end_data;
-    uint8_t * crsr;
-    DataO(uint8_t * b, size_t s): data{b}, end_data{b + s}, crsr{b} {}
+template<typename T>
+struct iobuffer_base {
+    T * data;
+    T * end_data;
+    T * crsr;
+    iobuffer_base(T * b, size_t s): data{b}, end_data{b + s}, crsr{b} {}
     
-    auto space() const -> size_t {return end_data - data;}
+    auto size() const -> size_t {return crsr - data;}
+    auto space() const -> size_t {return end_data - crsr;}
+    auto clear() -> void {crsr = data;}
+};
+
+
+struct obuffer: public iobuffer_base<uint8_t> {
+    using iobuffer_base::iobuffer_base;
     
     auto put(uint8_t x) -> void {
-        if(data == end_data)
+        if(crsr == end_data)
             throw std::length_error("DataO::put(): Reached end of output buffer.");
-        *data++ = x;
+        *crsr++ = x;
     }
     
     auto put(const uint8_t * d, size_t s) -> void {
         if(space() < s)
             throw std::length_error("DataO::put(): Reached end of output buffer.");
-        memcpy(data, d, s);
-        data += s;
+        memcpy(crsr, d, s);
+        crsr += s;
     }
 };
 
-struct DataI {
-    const uint8_t * data;
-    const uint8_t * end_data;
-    const uint8_t * crsr;
-    DataI(const uint8_t * b, size_t s): data{b}, end_data{b + s}, crsr{b} {}
-    
-    auto space() const -> size_t {return end_data - data;}
+struct ibuffer: public iobuffer_base<const uint8_t> {
+    using iobuffer_base::iobuffer_base;
     
     auto get() -> uint8_t {
-        if(data == end_data)
+        if(crsr == end_data)
             throw std::length_error("DataI::get(): Reached end of input buffer.");
-        return *data++;
+        return *crsr++;
     }
     
     auto get(uint8_t * d, size_t s) -> void {
         if(space() < s)
             throw std::length_error("DataI::put(): Reached end of input buffer.");
-        memcpy(d, data, s);
-        data += s;
+        memcpy(d, crsr, s);
+        crsr += s;
     }
     
     auto get(size_t s) -> const uint8_t * {
         if(space() < s)
             throw std::length_error("DataI::put(): Reached end of input buffer.");
-        auto tmp = data;
-        data += s;
+        auto tmp = crsr;
+        crsr += s;
         return tmp;
     }
 };
@@ -162,14 +165,22 @@ auto encode(outT & data, T value) -> void
     encode(data, zigzag(value));
 }
 
+template<typename outT, typename T,
+         typename std::enable_if<std::is_enum<T>::value>::type * = nullptr>
+auto encode(outT & data, T value) -> void
+{
+    using intT = typename std::underlying_type<T>::type;
+    encode(data, intT(value));
+}
+
 
 
 template<typename inT, typename T,
          typename std::enable_if<std::is_unsigned<T>::value>::type * = nullptr>
-auto decode(inT & data) -> T
+auto decode(inT & data, T & value) -> void
 {
     auto byte = data.get();
-    auto value = T(byte & 0x7F);
+    value = T(byte & 0x7F);
     auto shift = 7;
     while(byte & 0x80)
     {
@@ -177,59 +188,60 @@ auto decode(inT & data) -> T
         value |= T(byte & 0x7F) << shift;
         shift += 7;
     }
-    return value;
 }
 
 template<typename inT, typename T,
          typename std::enable_if<std::is_signed<T>::value>::type * = nullptr>
-auto decode(inT & data) -> T
+auto decode(inT & data, T & value) -> void
 {
     using unsignedT = typename std::make_unsigned<T>::type;
-    return unzigzag(decode<inT, unsignedT>(data));
+    auto unsignedValue = unsignedT{};
+    decode<inT, unsignedT>(data, unsignedValue);
+    value = unzigzag(unsignedValue);
+}
+
+template<typename inT, typename T,
+         typename std::enable_if<std::is_enum<T>::value>::type * = nullptr>
+auto decode(inT & data, T & value) -> void
+{
+    using intT = typename std::underlying_type<T>::type;
+    auto intValue = intT{};
+    decode<inT, intT>(data, intValue);
+    value = T(intValue);
 }
 
 
+
+// Encode/decode string
 template<typename outT>
-auto encode_string(outT & data, const std::string & value) -> void
+auto encode(outT & data, const std::string & value) -> void
 {
     encode(data, value.length());
     data.put(reinterpret_cast<const uint8_t *>(value.data()), value.length());
 }
 
 template<typename inT>
-auto decode_string(inT & data) -> std::string
+auto decode(inT & data, std::string & value) -> void
 {
-    auto length = decode<inT, uint64_t>(data);
-    auto strdata = reinterpret_cast<const char *>(data.get(length));
-    return std::string(strdata, length);
-}
-
-
-// Encode/decode string
-template<typename outT>
-auto encode_other(outT & data, const std::string & value) -> void
-{
-    encode_string(data, value);
-}
-
-template<typename inT>
-auto decode_other(inT & data, const std::string & value) -> void
-{
-    value = decode_string(data);
+    auto size = size_t{};
+    decode(data, size);
+    auto strdata = reinterpret_cast<const char *>(data.get(size));
+    value = std::string(strdata, size);
 }
 
 // Encode/decode binary blob
 template<typename outT>
-auto encode_other(outT & data, const std::vector<uint8_t> & value) -> void
+auto encode_blob(outT & data, const std::vector<uint8_t> & value) -> void
 {
     encode(data, value.size());
     data.put(value.data(), value.size());
 }
 
 template<typename inT>
-auto decode_other(inT & data, std::vector<uint8_t> & value) -> void
+auto decode_blob(inT & data, std::vector<uint8_t> & value) -> void
 {
-    auto size = decode<inT, uint64_t>(data);
+    auto size = size_t{};
+    decode(data, size);
     value.resize(size);
     data.get(value.data(), size);
 }
@@ -241,30 +253,31 @@ auto encode_variable_array(outT & data, const T & values) -> void
 {
     encode(data, values.size());
     for(auto & entry: values)
-        encode_other(data, entry);
+        encode(data, entry);
 }
 
 template<typename inT, typename T>
 auto decode_variable_array(inT & data, T & values) -> void
 {
-    auto size = decode<inT, size_t>(data);
+    auto size = size_t{};
+    decode(data, size);
     values.resize(size);
     for(auto & entry: values)
-        decode_other(data, entry);
+        decode(data, entry);
 }
 
 template<typename outT, typename T>
 auto encode_fixed_array(outT & data, const T & values) -> void
 {
     for(auto & entry: values)
-        encode_other(data, entry);
+        encode(data, entry);
 }
 
 template<typename inT, typename T>
 auto decode_fixed_array(inT & data, T & values) -> void
 {
     for(auto & entry: values)
-        decode_other(data, entry);
+        decode(data, entry);
 }
 
 } // namespace flexproto
